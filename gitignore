@@ -1,0 +1,56 @@
+# MATLAB-specific files
+
+# Generated/compiled
+*.asv                          # MATLAB auto-save
+*.m~                          # MATLAB backup
+*.mex*                        # Compiled MEX files
+*.slx.autosave                # Simulink autosave
+
+# MATLAB cache
+slprj/                        # Simulink build directory
+*.mdl.r2014b                 # Version-specific files
+
+# MATLAB figures/output
+*.fig                         # Figure files
+*.png~                        # Temporary images
+*.jpg~
+*.tiff~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Large files (keep source, ignore outputs)
+# Uncomment if storing generated images:
+# results/images/*.jpg
+# results/images/**/*.jpg
+
+# Data cache
+*.mat                         # MATLAB data files (optional to ignore)
+
+# Python artifacts (if any hybrid work)
+__pycache__/
+*.py[cod]
+*.so
+
+# Editor
+.editorconfig
