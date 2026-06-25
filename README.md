@@ -133,8 +133,8 @@ This project implements **modified variable splitting** for accelerated converge
 
 | File | Task | Regularization | Method |
 |------|------|---|---|
-| `INPT_TV_L1_U_ADMM.m` | Super-res (sr=2) | TV + L1 | Standard ADMM |
-| `INPT_TV_L15_U_ADMM.m` | Super-res (sr=2) | TV + L1.5 | Standard ADMM (best result) |
+| `INPT_TIK_L15_U_ADMM.m` | Super-res (sr=2) | Tikhonov + L1.5 | Standard ADMM |
+| `INPT_TV_L15_U_ADMM.m` | Super-res (sr=2) | TV + L1.5 | Standard ADMM |
 | `INPT_TV_L15_U_ADMM_FAST.m` | Super-res (sr=2) | TV + L1.5 | **Fast ADMM** |
 | `INPT_TIK_L15_U_ADMM_FAST.m` | Super-res (sr=2) | Tikhonov + L1.5 | **Fast ADMM** |
 
