@@ -1,221 +1,156 @@
 # Results & Experimental Output
 
-This folder contains the outputs and visualizations from ADMM algorithm experiments.
+This folder contains the outputs and visualizations from the experiments described in **Chapter 4 (Experiments and Results)** and **Chapter 5.3 (Comparison between Standard and Fast ADMM)** of the report.
+
+## Evaluation Metrics
+
+Two metrics are used throughout:
+
+- **ISNR (Improved Signal-to-Noise Ratio):** quantifies how much a variational algorithm numerically improves the corrupted image relative to the original. Higher ISNR = better numerical reconstruction.
+- **ISSIM (Improved Structural Similarity Index):** based on SSIM, compares structural information, luminance, and contrast. Range [0, 1], where 1 = perfect visual reconstruction.
+
+> Key distinction (as noted in the report): ISNR measures how much the numerical error decreases, while ISSIM measures how good the reconstruction looks visually — the image with the best ISNR is **not always** the one with the best ISSIM.
 
 ## Directory Structure
 
-### Organized by Problem & Image
-
 ```
 results/images/
-├── peppers_image/          # Restoration/inpainting on peppers image
-├── qr_code_image/          # QR code super-resolution
-├── sinusoidal_image/       # Synthetic sinusoid restoration
+├── sinusoidal_image/      # Sinusoidal image — TIK-L1.5 reconstruction
+├── qr_code_image/         # QR-code image — TV-L1.5 reconstruction
+├── peppers_image/         # Peppers image — both TIK-L1.5 and TV-L1.5
 │
-├── fast_peppers/           # Fast ADMM vs Standard comparison
-├── fast_qr_code/           # (same)
-├── fast_sinusoidal/        # (same)
+├── fast_sinusoidal/       # Standard vs. Fast ADMM timing (Sinusoidal, TIK-L1.5)
+├── fast_qr_code/          # Standard vs. Fast ADMM timing (QR-code, TV-L1.5)
+├── fast_peppers/          # Standard vs. Fast ADMM timing (Peppers, TIK-L1.5 and TV-L1.5)
 │
-└── Inference_of_noise/     # Noise estimation results
+└── Inference_of_noise/    # Chapter 2 — noise type & shape-parameter (β) inference
 ```
 
-## Experimental Results
+## Experiment 1 — Sinusoidal Image (TIK-L1.5)
 
-### Peppers Image Results
+The sinusoidal image has smooth variations, so the report uses the **TIK-L1.5** model (Tikhonov is better suited to smooth images).
 
-`peppers_image/` contains restoration results on the peppers benchmark image:
+**Setup:** penalty parameter β = 0.2 (ADMM penalty, not the noise shape parameter), 25 equally spaced values of µ in [0.01, 0.5].
 
-- **`original.jpg`** — Clean reference image
-- **`corrupted.jpg`** — Degraded input (with noise)
-- **`corrupted_by_mask.jpg`** — Masked version (inpainting setup)
+**Files:**
+- `original_image.jpg` — Clean reference (ground truth)
+- `corrupted.jpg` — Low-resolution corrupted input
+- `corrupted_by_mask.jpg` — Corrupted image with the sr=2 inpainting mask applied
 
-**Tikhonov Regularization:**
-- `TIK/best_isnr.jpg` — Best ISNR reconstruction
-- `TIK/best_issim.jpg` — Best SSIM reconstruction
-- `TIK/versus_mu.jpg` — Parameter sensitivity (penalty parameter μ)
+**Findings:**
+- Best **ISNR** at **µ = 0.11** — numerically best, but contains residual noise and looks visually less convincing
+- Best **ISSIM** at **µ = 0.03** — better preserves the original sinusoidal pattern visually
+- `versus_mu` plot shows ISNR and ISSIM as a function of µ, highlighting the two different optima
 
-**Total Variation:**
-- `TV/best_isnr.jpg` — Best ISNR reconstruction
-- `TV/best_issim.jpg` — Best SSIM reconstruction
-- `TV/versus_mu.jpg` — Parameter sensitivity
+## Experiment 2 — QR-Code Image (TV-L1.5)
 
-**Key Findings:**
-- TV regularization: Better edge preservation
-- Tikhonov: Smoother results, less artifact-prone
-- Optimal λ: typically 0.01-0.1 range
+The QR-code image is piecewise constant, so the report uses the **TV-L1.5** model (Total Variation is better suited to images with sharp edges/flat regions).
 
-### QR Code Results
+**Setup:** ADMM penalty parameters β_t = 3, β_r = 2, 15 equally spaced values of µ in [0.05, 30].
 
-`qr_code_image/` contains super-resolution results:
+**Files:**
+- `original.jpg` — Clean QR code
+- `corrupted.jpg` — Degraded low-resolution input
+- `corrupted_by_mask.jpg` — With inpainting mask applied
 
-- **`original.jpg`** — Clean QR code
-- **`corrupted.jpg`** — Degraded (low-res, noisy)
-- **`corrupted_by_mask.jpg`** — Masked setup
+**Findings:**
+- Best **ISSIM** at **µ = 10.75** — visually satisfactory, though the ISSIM value itself is relatively low
+- Best **ISNR** at **µ = 27.86** — a high µ means the fidelity term dominates over the regularization term, so the reconstruction can retain more noise
+- `versus_mu` plot shows the ISNR/ISSIM peaks across the tested µ range
 
-**Reconstructions:**
-- `image_best_isnr.jpg` — Highest quality restoration
-- `image_best_issim.jpg` — Best structural similarity
-- `versus_mu.jpg` — Method comparison
+## Experiment 3 — Peppers Image (TIK-L1.5 and TV-L1.5)
 
-**Performance:**
-- ISNR improvements: 12-18 dB
-- QR code readability: Restored with 2×2 upsampling
+The Peppers image is a real-world photo containing **both smooth regions and sharp edges**, so the report applies **both** regularization models for comparison.
 
-### Sinusoidal Image Results
+**Files:**
+- `original.jpg` — Clean reference
+- `corrupted.jpg` — Low-resolution corrupted input
+- `corrupted_by_mask.jpg` — With inpainting mask applied
 
-`sinusoidal_image/` contains results on synthetic periodic patterns:
+### TIK-L1.5 on Peppers (`TIK/` subfolder)
 
-- **`original_image.jpg`** — Clean sinusoid
-- **`corrupted.jpg`** — Degraded version
-- **`corrupted_by_mask.jpg`** — Masked for inpainting
+**Setup:** β = 0.2, 25 equally spaced µ values in [0.01, 10].
 
-**Analysis:**
-- Captures frequency response of algorithms
-- Tests edge vs. smoothness trade-offs
-- Useful for parameter tuning
+- Best **ISNR** at **µ = 2.92** — fidelity term emphasized, numerically closer to ground truth
+- Best **ISSIM** at **µ = 0.84** — relatively high ISSIM, but visual quality is not particularly good
 
-## Fast ADMM Comparison
+### TV-L1.5 on Peppers (`TV/` subfolder)
 
-`fast_peppers/`, `fast_qr_code/`, `fast_sinusoidal/` directories show:
+**Setup:** β_t = 3, β_r = 2, 15 equally spaced µ values in [0.05, 30].
 
-**`CPU_time.jpg`** — Standard ADMM convergence time
-- Iterations vs. residual norm
-- Typical: 200-500 iterations
+- Best **ISNR** at **µ = 15.03** — comparable ISNR to TIK-L1.5, with residual noise
+- Best **ISSIM** at **µ = 12.89** — better visual quality than the corresponding TIK-L1.5 reconstruction
 
-**`fast_CPU_time.jpg`** — Fast ADMM with modified variable splitting
-- Typically 20-40% fewer iterations
-- ~2× overall speedup
+**Conclusion (Peppers):** TV-L1.5 gives the better overall reconstruction for this image.
 
-### Example Metrics
+## Fast ADMM vs. Standard ADMM — Timing Comparison (Chapter 5.3)
 
-| Image | Task | Method | Time | Iterations | ISNR |
-|-------|------|--------|------|-----------|------|
-| Peppers | Restoration | Standard ADMM | 28s | 450 | 12.3 dB |
-| Peppers | Restoration | Fast ADMM | 14s | 280 | 12.1 dB |
-| QR Code | Inpainting | Standard ADMM | 22s | 380 | 14.7 dB |
-| QR Code | Inpainting | Fast ADMM | 11s | 220 | 14.5 dB |
+The fast ADMM variants use a **modified variable splitting** (r = u instead of r = Su − b) which allows the u-subproblem to be solved via the **Fast Fourier Transform**, since the inpainting matrix S is replaced by the identity. This comes at the cost of needing more iterations, but each iteration is much cheaper.
 
-## Noise Inference Results
+### Sinusoidal Image — TIK-L1.5
 
-`Inference_of_noise/` contains analysis of noise characteristics from image sequences:
+| | Standard ADMM | Fast ADMM |
+|---|---|---|
+| **Computational time** | 194.414 s | 4.927 s |
 
-### Distributions Visualized
+→ **~39× faster** with fast ADMM (fast ADMM needs more iterations, but is overall far faster per iteration).
 
-- **`AWGG_noise.png`** — Additive White Gaussian Gaussian distribution
-- **`MWGG_noise.png`** — Multiplicative White Gaussian Gaussian
-- **`Poisson_distribution.png`** — Poisson noise model
-- **`Poisson_noise.png`** — Poisson noise realization
+### QR-Code Image — TV-L1.5
 
-### Inference Analysis
+| | Standard ADMM | Fast ADMM |
+|---|---|---|
+| **Computational time** | 28.32 min | 45.221 s |
 
-- **`White_noise_distribution.png`** — Histogram of estimated white noise
-- **`Multiplicative_white_distribution.png`** — MWGG distribution fit
-- **`Shape_parameter_beta.png`** — Generalized Gaussian shape parameter β
-- **`Inference_of_the_noise.png`** — Summary of noise inference
+→ **~37× faster** with fast ADMM.
 
-### Point Cloud Analysis
+### Peppers Image — TIK-L1.5
 
-- **`Point_clouds.png`** — 3D scatter of estimated noise parameters
-  - Each point = estimate from one image in sequence
-  - Clustering around true parameters validates inference
+| | Standard ADMM | Fast ADMM |
+|---|---|---|
+| **Computational time** | 5.2 min | 4.196 s |
 
-## Interpreting Results
+→ **~74× faster** with fast ADMM.
 
-### ISNR (Improvement in SNR)
+### Peppers Image — TV-L1.5
 
-```
-ISNR = 10 * log10( ||x_true - x_degraded||^2 / ||x_true - x_restored||^2 )
-```
+| | Standard ADMM | Fast ADMM |
+|---|---|---|
+| **Computational time** | 10.34 min | 12.105 s |
 
-- Positive ISNR = improvement over degraded image
-- Typical range: 5-20 dB
-- Higher is better
+→ **~51× faster** with fast ADMM.
 
-### ISSIM (Structural Similarity)
+### Overall Conclusion
 
-```
-Range: 0 to 1
-```
+> "**TIK-L1.5** offers the best computational efficiency, whereas **TV-L1.5** yields the highest visual reconstruction quality." — Report, end of Chapter 5
 
-- ISSIM = 1: Perfect reconstruction
-- ISSIM > 0.8: Good quality
-- ISSIM > 0.9: Excellent quality
+## Noise Inference Results (`Inference_of_noise/`)
 
-### Parameter Sensitivity
+Results from Chapter 2, based on a sequence of **N = 200** static images:
 
-Images labeled `versus_mu.jpg`:
-- X-axis: Penalty parameter μ (0.1 to 10)
-- Y-axis: Reconstruction error or ISNR
-- Shows optimal parameter range
+- **Point cloud (µ_i, σ_i)** per pixel, used to discriminate between AWGGN, MWGGN, and Poisson noise via MSE fitting
+- **Conclusion:** the noise is **Additive White Generalized Gaussian (AWGGN)** with **σ = 0.0388**
+- **Histogram comparison** of estimated noise realizations vs. theoretical GG densities for β ∈ {1, 1.5, 2}
+- **Conclusion:** the optimal shape parameter is **β = 1.5** — which is exactly why the L1.5 fidelity term is used in Chapters 3-5
 
-## Generating Results
+## Summary Table — Best Results per Image
 
-To reproduce or generate new results:
+| Image | Best Model | Best-ISNR µ | Best-ISSIM µ | Notes |
+|---|---|---|---|---|
+| Sinusoidal | TIK-L1.5 | 0.11 | 0.03 | Smooth image → TIK preferred |
+| QR-code | TV-L1.5 | 27.86 | 10.75 | Piecewise constant → TV preferred |
+| Peppers | TIK-L1.5 | 2.92 | 0.84 | Mixed smooth/edge content |
+| Peppers | TV-L1.5 | 15.03 | 12.89 | **Overall best for Peppers** |
 
-```matlab
-% Run main experiment
-A_MAIN_2D
+## Notes on Interpreting `versus_mu` Plots
 
-% Results automatically saved to:
-% results/images/[image_type]/[algorithm]/output.jpg
-```
+- X-axis: regularization parameter µ (range depends on the image/model, see setup above)
+- Y-axis: ISNR or ISSIM value
+- The peak of each curve identifies the µ that is optimal for that specific metric
+- ISNR-optimal and ISSIM-optimal µ are generally **different**, illustrating the trade-off between numerical fidelity and visual quality
 
-## Using Results for Publication
+## References
 
-### Figures Worth Publishing
-
-1. **Comparison panels:**
-   - Original | Degraded | Tikhonov | TV reconstruction
-
-2. **Parameter sensitivity:**
-   - Plots from `versus_mu.jpg` showing optimization landscape
-
-3. **Noise inference:**
-   - Histograms from `Inference_of_noise/` directory
-
-4. **Performance comparison:**
-   - CPU time plots (Standard vs. Fast ADMM)
-
-### Recommended Pairings
-
-- **QR Code:** Shows edge preservation (TV > Tikhonov)
-- **Peppers:** Shows texture handling (balanced performance)
-- **Sinusoids:** Shows frequency response (analytical baseline)
-
-## Metrics Summary
-
-### Best Results Across Experiments
-
-| Test | Best Method | ISNR | ISSIM |
-|------|---|---|---|
-| Peppers | TV-L1.5 Fast | 13.2 dB | 0.842 |
-| QR Code | TV-L1.5 Standard | 15.1 dB | 0.876 |
-| Sinusoid | TV-L1.5 | 16.8 dB | 0.921 |
-
-## Organizing Your Own Results
-
-If adding new experiments:
-
-```
-results/images/new_experiment/
-├── original.jpg
-├── degraded.jpg
-├── method_A/
-│   ├── best_isnr.jpg
-│   ├── best_issim.jpg
-│   └── convergence.jpg
-├── method_B/
-│   ├── best_isnr.jpg
-│   ├── best_issim.jpg
-│   └── convergence.jpg
-└── comparison_metrics.txt
-```
-
-## Notes
-
-- Results are in JPEG format for compatibility
-- Some visualizations may be logarithmic scaled
-- Colormap convention: Grayscale for image results, Jet for metrics
-- Dates on files reflect last computation
-
-For detailed analysis, consult the main report: `docs/REPORT_LAB_ADMM.pdf`
+For the full derivations and figures referenced here, see:
+- Main `README.md` — project & algorithm overview
+- `docs/REPORT_LAB_ADMM.pdf` — Chapters 4 and 5 (full experiments and timing comparison)
+- `src/README.md` — code corresponding to each experiment
