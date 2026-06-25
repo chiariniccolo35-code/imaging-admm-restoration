@@ -1,68 +1,114 @@
 # ADMM for Regularized Inverse Problems
 
-A MATLAB implementation of **Alternating Direction Method of Multipliers (ADMM)** algorithms for solving regularized inverse problems, with application to **super-resolution via inpainting**.
+A MATLAB implementation of **Alternating Direction Method of Multipliers (ADMM)** for super-resolution, formulated as an inpainting problem, with semi-blind noise inference.
 
 ## Project Overview
 
-This project implements advanced optimization algorithms to solve the super-resolution inverse problem by reformulating it as an **inpainting problem**, where the inpainting mask depends on the super-resolution factor (sr = 2). Specifically:
+Super-resolution is an inverse problem that aims to reconstruct a high-resolution image from a degraded low-resolution input. The super-resolution problem is **equivalent to an inpainting problem where the inpainting mask is dependent on the super-resolution factor** (assumed equal to 2 throughout this project).
 
-- **Super-resolution:** Reconstruct a 256×256 high-resolution image from a 128×128 degraded low-resolution input
-- **Inpainting reformulation:** The super-resolution problem is solved as an inpainting problem, where the binary mask (known vs. unknown pixels) is structured according to the sr-factor
-- **Noise inference:** Semi-blind reconstruction with unknown noise characteristics, estimated from a sequence of images
+The project addresses super-resolution for **three corrupted, 128×128 low-resolution images** (Sinusoidal, QR-code, Peppers), all captured by the same low-resolution device and corrupted by the same — initially unknown — type of noise. The reconstruction is therefore performed **"semi-blind"**: the super-resolution/inpainting set S is known, while the noise has to be **inferred** from data.
 
-## Mathematical Framework
+### Two-Stage Approach
 
-### Inverse Problem Formulation
+1. **Noise inference** — Estimate the noise type and its parameters from a sequence of N = 200 static images
+2. **Image reconstruction** — Recover the high-resolution image using two optimal variational models (in the MAP sense), solved numerically with ADMM
 
-Super-resolution is equivalent to an inpainting problem where the inpainting mask is dependent on the super-resolution factor. The general inverse problem is formulated as:
+## Chapter 2 — Inference of the Noise
+
+To infer the unknown noise, a sequence of **N = 200 images** of the same static scene (fixed camera) is analyzed — any pixel variation across the sequence is attributable to noise.
+
+### Candidate Noise Models
+
+- **Additive White Generalized Gaussian Noise (AWGGN):** `b_i = (Au)_i + n_i`, with `n_i ~ GG(0, σ, β)`
+- **Multiplicative White Generalized Gaussian Noise (MWGGN):** `b_i = (Au)_i × n_i`, with `n_i ~ GG(1, σ, β)`
+- **Poisson noise:** `b_i ~ Poisson(µ_i)`
+
+These three models are distinguished by how the standard deviation σ relates to the mean µ at each pixel:
+- AWGGN → σ constant (independent of µ)
+- MWGGN → σ linear in µ
+- Poisson → σ = √µ
+
+### Estimation Procedure
+
+1. Compute the empirical pixel-wise mean and standard deviation across the 200-image sequence
+2. Plot the point cloud (µ_i, σ_i) for every pixel i
+3. Fit each candidate noise model to the point cloud via Mean Squared Error (MSE) minimization
+4. Select the noise model with the best fit
+
+**Result:** The noise is identified as **Additive White Generalized Gaussian (AWGGN)**, with **σ = 0.0388**.
+
+### Shape Parameter Estimation
+
+The shape parameter β of the Generalized Gaussian is still unknown (assumed β ∈ {1, 1.5, 2}). It is estimated by comparing normalized histograms of the estimated noise realizations against the theoretical GG densities for each candidate β.
+
+**Result:** The optimal shape parameter is **β = 1.5**.
+
+## Chapter 3 — Selection of the Variational Models
+
+In the MAP framework, the super-resolution problem is formulated as:
 
 ```
-min_x { 1/2 ||M ⊙ (x - b)||_2^2 + R(x) }
+u* = argmin_u { J(u; µ) = R(u) + µ F(u; b, S) }
 ```
 
 Where:
-- **x** is the high-resolution image (256×256) to recover
-- **b** is the observed low-resolution corrupted image (128×128)
-- **M** is the inpainting mask (binary, dependent on the sr-factor)
-- **⊙** denotes the Hadamard (element-wise) product
-- **R(x)** is the regularization functional (TV, Tikhonov, sparsity penalties)
+- **R(u)** — regularization term (prior on the image)
+- **F(u; b, S)** — fidelity term (data-consistency, depends on the noise model); S is the inpainting matrix
+- **µ** — regularization parameter (trade-off between fidelity and regularization)
 
-For a super-resolution factor sr = 2, the mask keeps ~25% of pixels (known) and leaves ~75% unknown, to be recovered through inpainting.
+### Regularization Terms
 
-### Regularization Models
+| Model | Formula | Behavior |
+|---|---|---|
+| **Total Variation (TV)** | `Σ ‖(∇u)_i‖_2` | Preserves edges, good for piecewise-smooth images |
+| **Tikhonov (TIK)** | `½ Σ ‖(∇u)_i‖_2^2` | Better for smooth images, tends to blur edges |
 
-#### Tikhonov Regularization (TIK)
-- L2 penalty on the gradient
-- Smooth solutions, effective for moderate noise
-- Formulation: `R(x) = λ ||∇x||_2^2`
+### Fidelity Term
 
-#### Total Variation (TV)
-- L1 penalty on the gradient  
-- Preserves edges, reduces oscillations
-- Formulation: `R(x) = λ ||∇x||_1`
-
-#### Sparsity Penalties
-- **L1 regularization:** Promotes sparse gradients
-- **L1.5 regularization:** Intermediate between L1 and L2, often better edge preservation
-- Formulation: `R(x) = λ ||∇x||_p^p` for p ∈ {1, 1.5, 2}
-
-## ADMM Algorithm
-
-The Alternating Direction Method of Multipliers solves the constrained problem:
+Since the noise was identified as AWGGN with β = 1.5, the fidelity term takes the form:
 
 ```
-min_x,y { f(x) + g(y) }  subject to  Ax + By = c
+F(u; b, S) = (1/β) ‖Su - b‖_β^β     with β = 1.5
 ```
 
-Through alternating minimization:
+### The Two Models Studied
 
-1. **x-update:** Minimize augmented Lagrangian w.r.t. x
-2. **y-update:** Minimize augmented Lagrangian w.r.t. y
-3. **Dual update:** Update dual variable ρ
+```
+TIK - L1.5:   u* = argmin_u { ½‖Du‖_2^2 + (µ/1.5)‖Su - b‖_1.5^1.5 }
 
-### Fast ADMM
+TV  - L1.5:   u* = argmin_u { Σ‖(Du)_i‖_2 + (µ/1.5)‖Su - b‖_1.5^1.5 }
+```
 
-This project implements **modified variable splitting** for accelerated convergence, reducing computational cost while maintaining solution quality (~2× speedup).
+Both are special cases of the general `TVp - Lq` formulation (p = 2 for TIK, p = 1 for TV; q = β = 1.5).
+
+## Chapter 4 — ADMM for L1.5-Regularized Inverse Problems
+
+Both variational models are solved using **ADMM**, introducing the variable splitting `r = Su − b`.
+
+### 4.1 — ADMM on TIK − L1.5
+- Two-block minimization: `f(u) = ½‖Du‖_2^2`, `g(r) = (1/1.5)‖r‖_1.5^1.5`
+- The **r-subproblem** has closed form via a soft-thresholding-type proximal operator for the L1.5 norm
+- The **u-subproblem** reduces to solving a linear system (since `f` is quadratic)
+- The dual variable λ is updated via dual ascent
+
+### 4.2 — ADMM on TV − L1.5
+- Same `r`-update as above (L1.5 proximal operator)
+- The **u-subproblem** requires an additional inner splitting/iteration since the TV term is non-smooth
+
+### 4.3 — Experiments and Results
+- Both models (TIK-L1.5 and TV-L1.5) are applied to the three test images (Sinusoid, QR-code, Peppers)
+- Performance compared via ISNR / ISSIM and visual inspection
+- TV-L1.5 generally yields sharper, better edge-preserving reconstructions; TIK-L1.5 yields smoother results
+
+## Chapter 5 — Fast ADMM through Modified Variable Splitting
+
+To accelerate convergence, both algorithms are reformulated using a **modified variable splitting** strategy:
+
+- **5.1** — Fast ADMM for TIK − L1.5
+- **5.2** — Fast ADMM for TV − L1.5
+- **5.3** — Comparison between Standard and Fast ADMM (convergence speed, CPU time, solution quality)
+
+The fast variants achieve faster convergence (fewer iterations / lower CPU time) while reaching comparable ISNR/ISSIM to the standard formulation.
 
 ## Project Structure
 
@@ -70,108 +116,67 @@ This project implements **modified variable splitting** for accelerated converge
 .
 ├── README.md                          # This file
 ├── docs/
-│   └── REPORT_LAB_ADMM.pdf           # Complete technical report (40+ pages)
+│   └── REPORT_LAB_ADMM.pdf           # Complete technical report (Chapters 1-5)
 ├── src/
-│   ├── A_MAIN_2D.m                   # Main entry point (112 KB)
-│   ├── B1_REST_GENERATE_DATA_2D.m    # [Alternative, not main focus] REST data generation
-│   ├── B2_INPT_GENERATE_DATA_2D.m    # INPT data generation (super-resolution, sr=2)
+│   ├── A_MAIN_2D.m                   # Main entry point — runs all experiments
+│   ├── B2_INPT_GENERATE_DATA_2D.m    # Generates the inpainting/super-resolution data (sr=2)
 │   │
-│   ├── REST_TV_L1_U_ADMM.m           # [Alternative, not main focus] Restoration: TV + L1
-│   ├── REST_TV_L2_DC_ADMM.m          # [Alternative, not main focus] Restoration: TV + L2
-│   ├── REST_TIK_L1_U_ADMM.m          # [Alternative, not main focus] Restoration: Tikhonov + L1
+│   ├── INPT_TIK_L15_U_ADMM.m         # Chapter 4.1 — Standard ADMM, TIK - L1.5
+│   ├── INPT_TV_L15_U_ADMM.m          # Chapter 4.2 — Standard ADMM, TV - L1.5
 │   │
-│   ├── INPT_TV_L1_U_ADMM.m           # Inpainting (sr=2): TV + L1
-│   ├── INPT_TV_L2_U_ADMM.m           # Inpainting (sr=2): TV + L2
-│   ├── INPT_TIK_L1_U_ADMM.m          # Inpainting (sr=2): Tikhonov + L1
-│   ├── INPT_TIK_L2_U_DIR.m           # Inpainting (sr=2): Tikhonov + L2
+│   ├── INPT_TIK_L15_U_ADMM_FAST.m    # Chapter 5.1 — Fast ADMM, TIK - L1.5
+│   ├── INPT_TV_L15_U_ADMM_FAST.m     # Chapter 5.2 — Fast ADMM, TV - L1.5
 │   │
-│   ├── INPT_TV_L15_U_ADMM.m          # L1.5 regularization (main result, best performance)
-│   ├── INPT_TV_L15_U_ADMM_FAST.m     # Fast L1.5 variant
-│   ├── INPT_TIK_L15_U_ADMM.m         # L1.5 + Tikhonov
-│   ├── INPT_TIK_L15_U_ADMM_FAST.m    # Fast Tikhonov + L1.5
+│   ├── LAB1_POINT1.m                 # Chapter 2 — Noise inference (type + shape parameter)
+│   ├── MASK_IMAGE_COL.m              # Utility: builds the inpainting mask S (sr=2)
+│   ├── compute_snr.m                 # Utility: SNR/ISNR computation
+│   ├── compute_normalized_histogram.m # Utility: histogram analysis (used in noise inference)
 │   │
-│   ├── LAB1_POINT1.m                 # Noise inference analysis
-│   ├── MASK_IMAGE_COL.m              # Utility: create inpainting mask (sr-dependent)
-│   ├── compute_snr.m                 # Utility: SNR computation
-│   ├── compute_normalized_histogram.m # Utility: histogram analysis
+│   ├── gauss_pdf_1D.m                # Gaussian PDF (β = 2 case)
+│   ├── laplace_pdf_1D.m              # Laplace PDF (β = 1 case)
+│   ├── generalized_gauss_pdf_1D.m    # Generalized Gaussian PDF (general β, incl. β=1.5)
+│   ├── uniform_pdf_1D.m              # Uniform PDF (β → ∞ case)
+│   ├── generate_WGG_realization.m    # Generates White Generalized Gaussian noise realizations
 │   │
-│   ├── gauss_pdf_1D.m                # Gaussian PDF
-│   ├── laplace_pdf_1D.m              # Laplace PDF
-│   ├── generalized_gauss_pdf_1D.m    # Generalized Gaussian PDF
-│   ├── uniform_pdf_1D.m              # Uniform PDF
-│   └── generate_WGG_realization.m    # White Generalized Gaussian noise
+│   ├── INPT_TV_L1_U_ADMM.m           # [Additional variant] TV with L1 fidelity
+│   ├── INPT_TV_L2_U_ADMM.m           # [Additional variant] TV with L2 fidelity
+│   ├── INPT_TIK_L1_U_ADMM.m          # [Additional variant] TIK with L1 fidelity
+│   ├── INPT_TIK_L2_U_DIR.m           # [Additional variant] TIK with L2 fidelity (direct solve)
+│   │
+│   ├── B1_REST_GENERATE_DATA_2D.m    # [Additional] Restoration (deblurring) data generation
+│   ├── REST_TV_L1_U_ADMM.m           # [Additional] Restoration: TV + L1
+│   ├── REST_TV_L2_DC_ADMM.m          # [Additional] Restoration: TV + L2
+│   ├── REST_TIK_L1_U_ADMM.m          # [Additional] Restoration: Tikhonov + L1
+│   │
+│   ├── brutta.m                      # Scratch/utility script
+│   └── README.md                     # Detailed algorithm documentation
 │
 ├── data/
-│   └── test_images/                  # 25+ standard test images
-│       ├── geometric shapes (squares, checkboards)
-│       ├── photos (peppers, lena, cameraman, etc.)
-│       ├── synthetic (sinusoids, QR codes)
-│       └── medical (brain, MRI)
+│   └── test_images/                  # Test images, including the 3 main 128×128 corrupted images
+│       (Sinusoidal, QR-code, Peppers) plus additional benchmark images
 │
 └── results/
     └── images/                        # Output results organized by experiment
-        ├── peppers_image/             # Peppers super-resolution (sr=2) results
-        ├── qr_code_image/             # QR code super-resolution (sr=2) results
-        ├── sinusoidal_image/          # Sinusoid super-resolution (sr=2) results
-        ├── fast_peppers/              # Fast ADMM comparison
-        ├── fast_qr_code/
-        ├── fast_sinusoidal/
-        └── Inference_of_noise/        # Noise analysis visualizations
+        ├── peppers_image/             # Peppers: TIK-L1.5 vs TV-L1.5 reconstructions
+        ├── qr_code_image/             # QR-code: TIK-L1.5 vs TV-L1.5 reconstructions
+        ├── sinusoidal_image/          # Sinusoid: TIK-L1.5 vs TV-L1.5 reconstructions
+        ├── fast_peppers/              # Standard vs. Fast ADMM comparison (Peppers)
+        ├── fast_qr_code/              # Standard vs. Fast ADMM comparison (QR-code)
+        ├── fast_sinusoidal/           # Standard vs. Fast ADMM comparison (Sinusoid)
+        └── Inference_of_noise/        # Noise type & shape-parameter inference plots
 ```
 
-## Main MATLAB Files
+## Core Algorithms (used in the report's main experiments)
 
-### Entry Point
+| File | Chapter | Model | Method |
+|------|---------|-------|--------|
+| `INPT_TIK_L15_U_ADMM.m` | 4.1 | TIK − L1.5 | Standard ADMM |
+| `INPT_TV_L15_U_ADMM.m` | 4.2 | TV − L1.5 | Standard ADMM |
+| `INPT_TIK_L15_U_ADMM_FAST.m` | 5.1 | TIK − L1.5 | Fast ADMM (modified variable splitting) |
+| `INPT_TV_L15_U_ADMM_FAST.m` | 5.2 | TV − L1.5 | Fast ADMM (modified variable splitting) |
+| `LAB1_POINT1.m` | 2 | — | Noise type & shape-parameter (β) inference |
 
-**`A_MAIN_2D.m`** (112 KB)
-- Complete workflow for all super-resolution (inpainting) experiments
-- Runs the three main test cases: Peppers, QR Code, Sinusoids
-- Configurable parameters for different scenarios
-- Automatic result visualization and metric computation
-
-### Algorithms Implemented
-
-| File | Task | Regularization | Method |
-|------|------|---|---|
-| `INPT_TIK_L15_U_ADMM.m` | Super-res (sr=2) | Tikhonov + L1.5 | Standard ADMM |
-| `INPT_TV_L15_U_ADMM.m` | Super-res (sr=2) | TV + L1.5 | Standard ADMM |
-| `INPT_TV_L15_U_ADMM_FAST.m` | Super-res (sr=2) | TV + L1.5 | **Fast ADMM** |
-| `INPT_TIK_L15_U_ADMM_FAST.m` | Super-res (sr=2) | Tikhonov + L1.5 | **Fast ADMM** |
-
-> Note: the `REST_*.m` files implement a general restoration (deblurring) formulation but are **not** the focus of this report — all experiments documented here use the inpainting/super-resolution formulation.
-
-### Utilities
-
-- **Noise models:** Gaussian, Laplace, Generalized Gaussian, Multiplicative White Gaussian (MWGG)
-- **Metrics:** SNR, ISNR, ISSIM computation
-- **Visualization:** Histogram analysis, PDF estimation
-
-## Key Results
-
-### Quantitative Metrics
-
-| Image | Val. ISNR | ISSIM |
-|---|---|---|
-| Peppers (sr=2) | 13.2 dB | 0.842 |
-| QR Code (sr=2) | 15.1 dB | 0.876 |
-| Sinusoid (sr=2) | 16.8 dB | 0.921 |
-
-The TV + L1.5 model consistently achieves the best trade-off between edge preservation and noise suppression.
-
-### Qualitative Analysis
-
-- **Edge preservation:** TV and L1.5 maintain sharp boundaries better than Tikhonov L2
-- **QR code readability:** Fully recovered after 2× super-resolution
-- **Computational efficiency:** Fast ADMM reduces iterations by 20-40% while maintaining solution quality
-
-## Project Highlights
-
-1. **Super-resolution via inpainting:** Reformulated sr=2 super-resolution as a structured inpainting problem
-2. **Multiple regularization strategies:** Systematic comparison of TIK vs. TV, and L1 vs. L1.5 vs. L2
-3. **Fast ADMM:** Modified variable splitting achieving ~2× speedup
-4. **Semi-blind noise inference:** Estimated unknown noise type/parameters from an image sequence
-5. **Comprehensive evaluation:** Both quantitative (ISNR, ISSIM) and qualitative analysis
-6. **Reproducibility:** Complete source code, test images, and a 40+ page technical report
+> Note: additional `INPT_*_L1_*`, `INPT_*_L2_*`, and `REST_*` files are exploratory/auxiliary variants present in the codebase, but the report's main pipeline (Chapters 2–5) is built around the **TIK − L1.5** and **TV − L1.5** models — in both their standard and fast ADMM forms — applied to a super-resolution/inpainting problem with sr = 2.
 
 ## How to Use
 
@@ -190,59 +195,43 @@ open A_MAIN_2D.m
 A_MAIN_2D
 ```
 
-The script will:
-1. Load the three test images (low-resolution, 128×128)
-2. Generate the inpainting mask for sr = 2
-3. Run ADMM algorithms (TIK and TV, with L1/L1.5/L2)
-4. Compute ISNR/ISSIM metrics
-5. Save and display results
+The script:
+1. Loads the three 128×128 corrupted test images (Sinusoid, QR-code, Peppers)
+2. Builds the sr=2 inpainting mask S
+3. Runs noise inference (or uses the pre-estimated AWGGN, σ = 0.0388, β = 1.5)
+4. Solves TIK-L1.5 and TV-L1.5 (standard ADMM)
+5. Solves TIK-L1.5 and TV-L1.5 (fast ADMM)
+6. Computes ISNR/ISSIM and compares standard vs. fast convergence
 
-### Testing Specific Algorithms
+### Running Noise Inference Alone
 
 ```matlab
-% Run super-resolution (sr=2) with TV + L1.5 regularization
-[x_reconstructed, metrics] = INPT_TV_L15_U_ADMM(degraded_image, mask, parameters)
-
-% Run fast variant
-[x_reconstructed, metrics] = INPT_TV_L15_U_ADMM_FAST(degraded_image, mask, parameters)
+LAB1_POINT1
 ```
 
-### Parameter Tuning
+Reproduces the analysis of Chapter 2: empirical mean/std estimation, point-cloud fitting (AWGGN/MWGGN/Poisson), and shape-parameter (β) estimation via histogram comparison.
 
-Key hyperparameters in `A_MAIN_2D.m`:
+### Calling the Core Solvers Directly
 
-- `lambda` — Regularization weight (e.g., 0.01-0.1)
-- `mu` — Penalty parameter (e.g., 1-10)
-- `max_iter` — Maximum ADMM iterations (e.g., 500-2000)
-- `tol` — Convergence tolerance (e.g., 1e-4 to 1e-6)
+```matlab
+% Standard ADMM, TV - L1.5
+[u_rec, info] = INPT_TV_L15_U_ADMM(b, S, mu, beta_penalty, max_iter, tol);
 
-## Noise Inference
+% Fast ADMM, TV - L1.5
+[u_rec, info] = INPT_TV_L15_U_ADMM_FAST(b, S, mu, beta_penalty, max_iter, tol);
+```
 
-The project implements **semi-blind** super-resolution with unknown noise characteristics:
-
-**Supported noise models:**
-- Additive White Gaussian Noise (AWGN)
-- Generalized Gaussian (GG)
-- Multiplicative White Gaussian Gaussian (MWGG)
-- Poisson noise
-
-**Noise inference approach:**
-- Analyze image sequence captured with fixed camera
-- Estimate noise statistics (mean, variance, shape parameter β)
-- Visualize noise distribution via histograms and PDF fitting
-
-See `LAB1_POINT1.m` and `results/images/Inference_of_noise/` for detailed analysis.
+(See in-code comments / `src/README.md` for exact argument lists.)
 
 ## Theoretical Background
 
-The report (`docs/REPORT_LAB_ADMM.pdf`) covers:
+The full report (`docs/REPORT_LAB_ADMM.pdf`) covers:
 
-1. **Inverse Problems** — Super-resolution formulated as an inpainting problem
-2. **Inference of the Noise** — Statistical models, parameter estimation
-3. **Variational Models** — Tikhonov, Total Variation, sparsity regularization
-4. **ADMM Theory** — Convergence analysis, saddle point problems
-5. **Fast ADMM** — Modified variable splitting, practical acceleration
-6. **Experiments & Results** — Quantitative evaluation, performance analysis
+1. **Introduction** — Super-resolution as an inpainting problem (sr = 2)
+2. **Inference of the noise** — Noise model identification (AWGGN, σ = 0.0388) and shape-parameter estimation (β = 1.5)
+3. **Selection of the optimal variational models** — TV vs. Tikhonov, derivation of the TIK-L1.5 / TV-L1.5 / general TVp-Lq formulation
+4. **Application of ADMM to L1.5-regularized inverse problems** — Variable splitting, augmented Lagrangian, closed-form proximal update for the L1.5 norm, experiments and results
+5. **Fast ADMM through modified variable splitting** — Accelerated TIK-L1.5 and TV-L1.5, comparison with the standard ADMM in terms of convergence speed and solution quality
 
 ## References
 
@@ -250,34 +239,22 @@ The report (`docs/REPORT_LAB_ADMM.pdf`) covers:
 
 - Boyd, S., Parikh, N., Chu, E., Peleato, B., & Eckstein, J. (2011). "Distributed Optimization and Statistical Learning via the Alternating Direction Method of Multipliers." *Foundations and Trends in Machine Learning*, 3(1), 1–122.
 
-### Inverse Problems
+### Inverse Problems & Regularization
 
 - Bertero, M., & Boccacci, P. (1998). *Introduction to Inverse Problems in Imaging.* CRC Press.
 - Hansen, P. C. (2010). *Discrete Inverse Problems: Insight and Algorithms.* SIAM.
-
-### Regularization
-
 - Rudin, L. I., Osher, S., & Fatemi, E. (1992). "Nonlinear Total Variation based noise removal algorithms." *Physica D: Nonlinear Phenomena*, 60(1-4), 259–268.
-
-### Image Restoration
-
-- Vogel, C. R., & Oman, M. E. (1996). "Iterative methods for total variation denoising." *SIAM J. Scientific Computing*, 17(1), 227–238.
 
 ## Author
 
 **Niccolò Chiari**  
 Master's degree in Mathematics (Applied Curriculum)  
-University of Bologna, 2024/2025
+University of Bologna, Academic Year 2024/2025
 
 ## License
 
 Educational project. Available for academic use.
 
-## Acknowledgments
-
-Course: *Numerical Methods for Imaging*  
-University of Bologna, 2024/2025
-
 ---
 
-For questions or detailed explanations, consult the comprehensive report: `docs/REPORT_LAB_ADMM.pdf`
+For complete derivations, figures, and experimental details, consult: `docs/REPORT_LAB_ADMM.pdf`
